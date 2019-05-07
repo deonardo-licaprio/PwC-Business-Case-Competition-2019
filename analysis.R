@@ -102,10 +102,41 @@ var_dummy <- dummy_fac %>% select(-Job_type, -Credit_purpose, -Car_status, -Home
 
 df_model <- cbind(var_dummy, var_num)
 
+X <- xgb.DMatrix(data = as.matrix(df_model), label = y)
+cols <- colnames(X)
+rm(df_model); gc()
+
 #Training model
+p <- list(
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+          # 
+)
 
+cv_xgb <- xgb.cv(p, X, p$nrounds, nfold = 10, print_every_n = 30, early_stopping_rounds = 100)
 
+min_auc_index <- cv_xgb$best_iteration
+min_auc <- cv_xgb$evaluation_log[min_auc_index]$test_auc_mean
 
+m_xgb <- xgb.train(p, X, nrounds = min_auc_index)
+
+xgb.importance(cols, model = m_xgb) %>% 
+    xgb.plot.importance(top_n = 25)
+
+#SHAP
+#Prediction
+#Distribution of predictions
 
 
 
