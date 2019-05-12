@@ -8,8 +8,7 @@ library(fastDummies)
 library(xgboost)
 library(caret)
 library(moments)
-library(glmnet)
-library(doParallel)
+library(lime)
 
 #Loading functions
 source("R/gini_function.R")
@@ -104,24 +103,24 @@ df_model <- cbind(var_dummy, var_num)
 
 X <- xgb.DMatrix(data = as.matrix(df_model), label = y)
 cols <- colnames(X)
-rm(df_model); gc()
+#rm(df_model); gc()
 
 #Training model
-p <- list(
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
-          # 
+p <- list(objective = "binary:logistic",
+          booster = "gbtree",
+          eval_metric = "auc",
+          nthread = 4,
+          eta = 0.05, 
+          max_depth = 4, 
+          min_child_weight = 30, 
+          gamma = 0,
+          subsample = 0.8, 
+          colsample_bytree = 0.75, 
+          colsample_bylevel = 0.85, 
+          alpha = 0,
+          lambda = 1, 
+          nrounds = 2000,
+          scale_pos_weight = 9
 )
 
 cv_xgb <- xgb.cv(p, X, p$nrounds, nfold = 10, print_every_n = 30, early_stopping_rounds = 100)
@@ -131,19 +130,39 @@ min_auc <- cv_xgb$evaluation_log[min_auc_index]$test_auc_mean
 
 m_xgb <- xgb.train(p, X, nrounds = min_auc_index)
 
+#Saving model
+xgb.save(m_xgb, 'models/m_xgb_0512')
+
+#Variable importance plot
 xgb.importance(cols, model = m_xgb) %>% 
-    xgb.plot.importance(top_n = 25)
+    xgb.plot.importance(top_n = 15, rel_to_first = T)
 
-#SHAP
+#Preparing test data
+df_test <- df %>%
+    filter(is.na(DefFlag)) %>%
+    create_features()
+
+df_test[,var_to_factor] <- lapply(df_test[,var_to_factor], as.factor)
+df_test %<>% select(-Application_ID, -DefFlag)
+
+var_fac_test <- select_if(df_test, is.factor)
+var_num_test <- select_if(df_test, is.numeric)
+
+##Dummy variables
+dummy_fac_test <- fastDummies::dummy_cols(var_fac_test, remove_first_dummy = TRUE)
+var_dummy_test <- dummy_fac_test %>% select(-Job_type, -Credit_purpose, -Car_status, -Home_status, -Marital_status)
+
+df_test <- cbind(var_dummy_test, var_num_test)
+y_test <- df %>% filter(is.na(DefFlag)) %>% select(DefFlag) %>% as.matrix()
+X_test <- xgb.DMatrix(data = as.matrix(df_test), label = y_test)
+
+#LIME
+explainer <- lime(df_model, m_xgb)
+
+explanation <- explain(df_test[1:floor(nrow(df_test)/2),], explainer, n_features = 5, n_labels = 1)
+plot_features(explanation)
+
 #Prediction
-#Distribution of predictions
 
-
-
-
-
-
-
-
-
+##Submission
 
