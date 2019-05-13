@@ -49,11 +49,12 @@ cnt_per_var[1:10,] %>%
     theme_minimal()
 
 #Creating train set
-df_train <- df %>%
-    filter(!is.na(DefFlag))
+# df_train <- df %>%
+#     filter(!is.na(DefFlag))
 
 #Checking data unbalance
-df_train %>%
+df %>%
+    filter(!is.na(DefFlag)) %>%
     ggplot(aes(x = factor(DefFlag))) +
     geom_bar(fill = "steelblue") +
     geom_text(stat = "count", aes(label = ..count..), vjust = 1.5, color = "white") +
@@ -81,11 +82,11 @@ spending_var_names <- df %>%
     names()
 
 cat("Can take ~30 seconds...\n")
-df_train_fe <- df_train %>% 
+df_fe <- df %>% 
     create_features()
 
 #Preparing data
-df_model <- df_train_fe 
+df_model <- df_fe 
 
 y <- df_model$DefFlag
 var_to_factor <- c("Job_type", "Marital_status", "Home_status", "Car_status", "Credit_purpose")
@@ -101,9 +102,20 @@ var_dummy <- dummy_fac %>% select(-Job_type, -Credit_purpose, -Car_status, -Home
 
 df_model <- cbind(var_dummy, var_num)
 
+#Train and test sets
+tr <- is.na(y)
+df_test <- df_model[tr,]
+y_test <- y[tr]
+
+df_model <- df_model[!tr,]
+y <- y[!tr]
+
 X <- xgb.DMatrix(data = as.matrix(df_model), label = y)
+X_test <- xgb.DMatrix(data = as.matrix(df_test), label = y_test)
+
 cols <- colnames(X)
-#rm(df_model); gc()
+
+rm(df, df_fe); gc()
 
 #Training model
 p <- list(objective = "binary:logistic",
@@ -137,32 +149,18 @@ xgb.save(m_xgb, 'models/m_xgb_0512')
 xgb.importance(cols, model = m_xgb) %>% 
     xgb.plot.importance(top_n = 15, rel_to_first = T)
 
-#Preparing test data
-df_test <- df %>%
-    filter(is.na(DefFlag)) %>%
-    create_features()
-
-df_test[,var_to_factor] <- lapply(df_test[,var_to_factor], as.factor)
-df_test %<>% select(-Application_ID, -DefFlag)
-
-var_fac_test <- select_if(df_test, is.factor)
-var_num_test <- select_if(df_test, is.numeric)
-
-##Dummy variables
-dummy_fac_test <- fastDummies::dummy_cols(var_fac_test, remove_first_dummy = TRUE)
-var_dummy_test <- dummy_fac_test %>% select(-Job_type, -Credit_purpose, -Car_status, -Home_status, -Marital_status)
-
-df_test <- cbind(var_dummy_test, var_num_test)
-y_test <- df %>% filter(is.na(DefFlag)) %>% select(DefFlag) %>% as.matrix()
-X_test <- xgb.DMatrix(data = as.matrix(df_test), label = y_test)
-
 #LIME
 explainer <- lime(df_model, m_xgb)
-
-explanation <- explain(df_test[1:floor(nrow(df_test)/2),], explainer, n_features = 5, n_labels = 1)
+explanation <- explain(df_test[1:floor(nrow(df_test)/10),], explainer, n_features = 4, n_labels = 1)
 plot_features(explanation)
 
 #Prediction
+prediction_train <- predict(m_xgb, X)
+prediction_test <- predict(m_xgb, X_test)
+predition_full <- c(prediction_train, prediction_test)
+
+Gini_value(score = prediction_train, target = y)
 
 ##Submission
-
+output <- data.frame(Application_ID = df_fe$Application_ID, Score = predition_full)
+write.table(x = output, file = "Output.csv", dec = ".", sep = ";", row.names = F)
