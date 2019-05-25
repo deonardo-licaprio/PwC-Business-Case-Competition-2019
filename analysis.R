@@ -9,6 +9,7 @@ library(xgboost)
 library(caret)
 library(moments)
 library(lime)
+library(ROCR)
 
 #Loading functions
 source("R/gini_function.R")
@@ -115,7 +116,7 @@ X_test <- xgb.DMatrix(data = as.matrix(df_test), label = y_test)
 
 cols <- colnames(X)
 
-rm(df, df_fe); gc()
+rm(df); gc()
 
 #Training model
 p <- list(objective = "binary:logistic",
@@ -151,7 +152,13 @@ xgb.importance(cols, model = m_xgb) %>%
 
 #LIME
 explainer <- lime(df_model, m_xgb)
-explanation <- explain(df_test[1:floor(nrow(df_test)/10),], explainer, n_features = 4, n_labels = 1)
+explanation <- explain(df_test[50:53,],
+                       explainer,
+                       n_features = 6,
+                       n_labels = 1,
+                       n_permutations = 5000,
+                       kernel_width = 2,
+                       feature_select = "lasso_path")
 plot_features(explanation)
 
 #Prediction
@@ -161,6 +168,26 @@ predition_full <- c(prediction_train, prediction_test)
 
 Gini_value(score = prediction_train, target = y)
 
-##Submission
+#ROC
+#Source: http://jamesmarquezportfolio.com/get_up_and_running_with_xgboost_in_r.html
+pred <- prediction(prediction_train, y)
+perf <- performance(pred, "tpr", "fpr")
+
+plot(perf,
+     avg="threshold",
+     colorize=TRUE,
+     lwd=1,
+     main="ROC Curve - XGBoost",
+     print.cutoffs.at=seq(0, 1, by=0.05),
+     text.adj=c(-0.5, 0.5),
+     text.cex=0.5)
+grid(col="lightgray")
+axis(1, at=seq(0, 1, by=0.1))
+axis(2, at=seq(0, 1, by=0.1))
+abline(v=c(0.1, 0.3, 0.5, 0.7, 0.9), col="lightgray", lty="dotted")
+abline(h=c(0.1, 0.3, 0.5, 0.7, 0.9), col="lightgray", lty="dotted")
+lines(x=c(0, 1), y=c(0, 1), col="black", lty="dotted")
+
+#Submission
 output <- data.frame(Application_ID = df_fe$Application_ID, Score = predition_full)
 write.table(x = output, file = "Output.csv", dec = ".", sep = ";", row.names = F)
